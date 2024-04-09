@@ -652,6 +652,63 @@ bool Adafruit_PN532Ex::readPassiveTargetID(uint8_t cardbaudrate, uint8_t * uid, 
 
 /**************************************************************************/
 /*!
+    Sets the MxRtyPassiveActivation byte of the RFConfiguration register
+
+    @param  sakValue    Holds the value of the SAK attribute
+
+    @returns 1 if everything executed properly, 0 for an error
+*/
+/**************************************************************************/
+bool Adafruit_PN532Ex::readCardSAK(uint8_t cardbaudrate, uint8_t * sakValue, uint16_t timeout) {
+  pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
+  pn532_packetbuffer[1] = 1;  // max 1 cards at once (we can set this to 2 later)
+  pn532_packetbuffer[2] = cardbaudrate;
+
+  if (!sendCommandCheckAck(pn532_packetbuffer, 3, timeout))
+  {
+    #ifdef PN532DEBUG
+      PN532DEBUGPRINT.println(F("No card(s) read"));
+    #endif
+    return 0x0;  // no cards read
+  }
+
+  // wait for a card to enter the field (only possible with I2C)
+  if (!_usingSPI) {
+    #ifdef PN532DEBUG
+      PN532DEBUGPRINT.println(F("Waiting for IRQ (indicates card presence)"));
+    #endif
+    if (!waitready(timeout)) {
+      #ifdef PN532DEBUG
+        PN532DEBUGPRINT.println(F("IRQ Timeout"));
+      #endif
+      return 0x0;
+    }
+  }
+
+  // read data packet
+  readdata(pn532_packetbuffer, 20);
+
+  /* ISO14443A card response should be in the following format:
+
+    byte            Description
+    -------------   ------------------------------------------
+    b0..6           Frame header and preamble
+    b7              Tags Found
+    b8              Tag Number (only one used in this example)
+    b9..10          SENS_RES
+    b11             SEL_RES
+    b12             NFCID Length
+    b13..NFCIDLen   NFCID                   */ 
+
+  if (pn532_packetbuffer[7] != 1)
+    return 0;
+
+  *sakValue = pn532_packetbuffer[11];
+  return 1;
+}
+
+/**************************************************************************/
+/*!
     @brief  Exchanges an APDU with the currently inlisted peer
     @param  send            Pointer to data to send
     @param  sendLength      Length of the data to send
